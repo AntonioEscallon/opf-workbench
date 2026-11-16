@@ -1,7 +1,7 @@
 /* OPF Workbench. A palette taken from energy-policy reporting: black ink, deep teal and slate, chartreuse for "this is the point",
    sky and ocean blues, burnt orange for the series that matters and the selection, quiet grays for context. Pale colors
-   are used as fills and highlights with ink on top, never as text or thin lines. Warnings and the Run button are a live
-   red, the only red on the page besides blocking errors. Figures in monospace. Light mode only. */
+   are used as fills and highlights with ink on top, never as text or thin lines. Warnings are maroon, blocking errors a
+   clear red, and the Run button a deep olive. Figures in monospace. Light mode only. */
 :root {
   color-scheme: light;
   --page: #eef0ef;           /* behind the cards */
@@ -27,8 +27,9 @@
   --hi-soft: #f0d6c8;
   --amber: #e5ef58;
   --good: #1f7a5a;           /* teal-green, derived from the ink */
-  --bad: #a8102c;            /* blocking errors: deep crimson */
-  --warn: #e8273c;           /* warnings and the Run button: live red; warning marks are rings */
+  --go: #6b7c14;             /* the Run button: deep olive, from the olive-lime family */
+  --bad: #d0142c;            /* blocking errors: clear red, the most alarming color on the page */
+  --warn: #8a1c2c;           /* warnings: maroon; warning marks are rings */
   --tag: #f3f7c2;
   --tag-ink: #4a5300;
   --series-1: #2f7aa3; --series-1-fill: #c9e0eb;
@@ -85,8 +86,8 @@ a:hover { text-decoration: underline; }
 .btn { background: var(--bg); border: 1px solid #cfd0dd; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-weight: 500; font-size: 14px; color: var(--text); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .btn:hover { border-color: var(--faint); text-decoration: none; }
 .btn.on { border-color: var(--text); font-weight: 600; }
-.btn.go { background: var(--warn); color: #fff; border-color: var(--warn); font-weight: 700; box-shadow: 0 2px 8px rgba(232,39,60,.35); }
-.btn.go:hover { background: #cf1a2f; border-color: #cf1a2f; }
+.btn.go { background: var(--go); color: #fff; border-color: var(--go); font-weight: 700; box-shadow: 0 2px 8px rgba(107,124,20,.35); }
+.btn.go:hover { background: #5a6810; border-color: #5a6810; }
 .btn.primary { background: var(--text); color: #fff; border-color: var(--text); }
 .btn.small { padding: 3px 8px; font-size: 12.5px; }
 .btn.link { border: 0; padding: 0; color: var(--accent); background: none; }
@@ -105,8 +106,8 @@ a:hover { text-decoration: underline; }
 .tag { display: inline-block; background: var(--tag); color: var(--tag-ink); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
 .tag.gray { background: var(--chip); color: var(--muted); border: 1px solid var(--line); }
 .tag.good { background: var(--lime); color: var(--ink); }
-.tag.bad { background: #ffd3db; color: #8f0022; }
-.tag.warn { background: #ffe1e4; color: #b0001c; }
+.tag.bad { background: #ffd9dd; color: #b0001c; }
+.tag.warn { background: #f4e2e5; color: #8a1c2c; }
 .tag.blue { background: #dcebf3; color: #1d5a7c; }
 
 table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
