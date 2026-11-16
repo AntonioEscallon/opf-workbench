@@ -26,7 +26,7 @@ function TopBar({ active, hasPanel, panelOpen, onPanel }: { active: Page; hasPan
     <header className="topbar">
       <button className="burger" disabled={!hasPanel} onClick={onPanel} title={panelOpen ? 'Hide the side panel' : 'Show the side panel'} aria-label="Toggle side panel">☰</button>
       <a className="brand" href={href('/')}>
-        OPF Workbench <small>a friendlier interface for optimal power flow studies</small>
+        OPF Workbench
       </a>
       <nav className="topnav">
         {tab('case', '/', 'Case')}

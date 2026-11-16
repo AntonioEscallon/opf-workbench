@@ -1,4 +1,4 @@
-/* OPF Workbench. A palette taken from energy-policy reporting: deep teal ink, slate, chartreuse for "this is the point",
+/* OPF Workbench. A palette taken from energy-policy reporting: black ink, deep teal and slate, chartreuse for "this is the point",
    sky and ocean blues, burnt orange for the series that matters and the selection, quiet grays for context. Pale colors
    are used as fills and highlights with ink on top, never as text or thin lines. Warnings and the Run button are a live
    red, the only red on the page besides blocking errors. Figures in monospace. Light mode only. */
@@ -8,13 +8,13 @@
   --bg: #ffffff;             /* cards, tables, inputs */
   --frame: #f5f5f5;          /* inner panels */
   --bar: #e5e7e7;
-  --text: #133033;           /* deep teal ink */
-  --muted: #5a6d6e;          /* slate, a step darker for text */
+  --text: #000000;           /* black ink */
+  --muted: #555555;          /* secondary text: neutral gray */
   --faint: #a3afaf;
   --line: #e1e4e4;
   --chip: #f5f6f6;
   --accent: #2f7aa3;         /* links: ocean */
-  --ink: #133033;
+  --ink: #000000;
   --slate: #65797a;
   --lime: #e5ef58;           /* chartreuse: highlights and fills, ink on top */
   --lime-deep: #9aab1c;      /* olive-lime for lines and marks that must read on white */

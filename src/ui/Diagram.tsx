@@ -25,7 +25,7 @@ function inkOn(fill: string) {
   const m = fill.startsWith('#') ? [1, 3, 5].map((i) => parseInt(fill.slice(i, i + 2), 16)) : (fill.match(/\d+/g) ?? []).map(Number)
   if (m.length < 3 || m.some(Number.isNaN)) return '#fff'
   const l = 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]
-  return l > 150 ? '#133033' : '#fff'
+  return l > 150 ? '#000' : '#fff'
 }
 
 /** Voltage position in its band: 0 = at V min, 1 = at V max. Ocean low, teal-green mid, chartreuse then orange high. */
