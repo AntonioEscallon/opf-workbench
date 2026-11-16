@@ -1,7 +1,7 @@
 // Run comparison, the main research view: one quantity against the swept parameter (or across any picked runs),
 // failed runs marked, and the full table beside it.
 import { useRef, useState } from 'react'
-import { Header, Shell } from '../App'
+import { Shell } from '../App'
 import { labelOf } from '../model/types'
 import { objectiveLabel } from '../solver/interface'
 import { runData, scenario, useStore } from '../store'
@@ -81,7 +81,6 @@ export default function ComparePage({ sweep: sweepQ, runs: runsQ }: { sweep: str
 
   const panel = (
     <>
-      <Header active="compare" />
       <div className="label" style={{ marginTop: 4 }}>Compare</div>
       <ul className="sections" style={{ marginTop: 0 }}>
         {s.sweeps.map((x) => (

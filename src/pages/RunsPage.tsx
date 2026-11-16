@@ -1,6 +1,6 @@
 // Runs: start a run (objective + a version, a scenario or a whole sweep), watch the queue, open or compare results.
 import { useState } from 'react'
-import { Header, Shell, useToast } from '../App'
+import { Shell, useToast } from '../App'
 import { DEFAULT_SETTINGS, OBJECTIVES, objectiveLabel } from '../solver/interface'
 import type { Objective, SolverSettings } from '../solver/interface'
 import { head, issuesOf, queueRun, resolve, scenario, sweep, useStore, useUI } from '../store'
@@ -65,7 +65,6 @@ export default function RunsPage() {
 
   const panel = (
     <>
-      <Header active="runs" />
       <div className="label" style={{ marginTop: 4 }}>New run</div>
       <TargetPicker value={tv} onChange={setTv} includeSweeps />
       <p className="hint">{isSweep ? `Queues one run per scenario of the sweep (${targets.length}).` : 'Runs use the data exactly as it is now; the run keeps a pointer to it.'}</p>

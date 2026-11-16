@@ -16,19 +16,28 @@ export const OVERLAYS: [Overlay, string][] = [
 type N = { id: string; label: string; x: number; y: number; fx?: number | null; fy?: number | null; star?: boolean; bus?: number }
 type E = { id: string; a: string; b: string; kind: 'line' | 'tx' | 'tie'; on: boolean; leg?: string }
 
-const AREA_COLORS = ['#2d3748', '#805ad5', '#2f9e5f', '#dd6b20', '#5b8fd9']
+const AREA_COLORS = ['#133033', '#2f7aa3', '#9aab1c', '#de5b15', '#65797a'] // ink, ocean, olive-lime, burnt orange, slate
 const mix = (a: number[], b: number[], t: number) => `rgb(${a.map((x, i) => Math.round(x + (b[i] - x) * Math.max(0, Math.min(1, t)))).join(',')})`
-const BLUE = [79, 134, 214], GREEN = [47, 158, 95], RED = [214, 64, 107], GRAY = [203, 213, 224], AMBER = [246, 184, 41], DARK = [123, 52, 30]
+const BLUE = [47, 122, 163], GREEN = [31, 122, 90], RED = [222, 91, 21], GRAY = [215, 215, 215], AMBER = [205, 218, 60], DARK = [222, 91, 21]
 
-/** Voltage position in its band: 0 = at V min, 1 = at V max. Blue low, green mid, red high. */
-export function vmColor(vm: number, vn: number, vx: number) {
-  const t = (vm - vn) / (vx - vn || 1)
-  if (t < 0) return 'rgb(44,82,160)'
-  if (t > 1) return 'rgb(197,48,48)'
-  return t < 0.5 ? mix(BLUE, GREEN, t / 0.5) : mix(GREEN, RED, (t - 0.5) / 0.5)
+/** Ink or white, whichever reads on a fill given as #rrggbb or rgb(r,g,b). */
+function inkOn(fill: string) {
+  const m = fill.startsWith('#') ? [1, 3, 5].map((i) => parseInt(fill.slice(i, i + 2), 16)) : (fill.match(/\d+/g) ?? []).map(Number)
+  if (m.length < 3 || m.some(Number.isNaN)) return '#fff'
+  const l = 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]
+  return l > 150 ? '#133033' : '#fff'
 }
 
-export default function Diagram({ data, selected, onSelect, issues, result, overlay, onOverlay, layout, onLayout }: {
+/** Voltage position in its band: 0 = at V min, 1 = at V max. Ocean low, teal-green mid, chartreuse then orange high. */
+export function vmColor(vm: number, vn: number, vx: number) {
+  const t = (vm - vn) / (vx - vn || 1)
+  if (t < 0) return 'rgb(19,48,51)'
+  if (t > 1) return 'rgb(232,39,60)'
+  // through amber on the high side, so in-between buses stay bright instead of mixing to brown
+  return t < 0.5 ? mix(BLUE, GREEN, t / 0.5) : t < 0.75 ? mix(GREEN, AMBER, (t - 0.5) / 0.25) : mix(AMBER, RED, (t - 0.75) / 0.25)
+}
+
+export default function Diagram({ data, selected, onSelect, issues, result, overlay, onOverlay, layout, onLayout, inset = 0 }: {
   data: CaseData
   selected: string | null
   onSelect: (k: string) => void
@@ -38,6 +47,8 @@ export default function Diagram({ data, selected, onSelect, issues, result, over
   onOverlay?: (o: Overlay) => void
   layout: Record<string, { x: number; y: number }>
   onLayout: (l: Record<string, { x: number; y: number }>) => void
+  /** pixels on the right covered by a floating card: the network is fitted into the space left of it */
+  inset?: number
 }) {
   const wrap = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -91,23 +102,41 @@ export default function Diagram({ data, selected, onSelect, issues, result, over
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structure, Object.keys(layout).length === 0])
 
-  // ---- view box (frozen while dragging)
+  // ---- viewport: the layout is fitted to the pane in screen pixels, so buses keep a readable size at any pane size.
+  // The fit is frozen while dragging a bus; zoom and pan sit on top of it (buttons, wheel, drag the background).
+  const [size, setSize] = useState({ w: 800, h: 500 })
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth || 800, h: el.clientHeight || 500 }))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   const [drag, setDrag] = useState<string | null>(null)
-  const vbRef = useRef('0 0 100 100')
+  const [view, setView] = useState({ k: 1, x: 0, y: 0 })
+  const pan = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null)
+  const fitRef = useRef({ s: 1, cx: 0, cy: 0 })
   if (!drag) {
     const ps = Object.values(pos)
     if (ps.length) {
       const xs = ps.map((p) => p.x), ys = ps.map((p) => p.y)
-      const pad = 48, top = 80 // room for the overlay controls in the top-right corner
-      vbRef.current = `${Math.min(...xs) - pad} ${Math.min(...ys) - top} ${Math.max(...xs) - Math.min(...xs) + 2 * pad} ${Math.max(...ys) - Math.min(...ys) + top + pad}`
+      const bw = Math.max(...xs) - Math.min(...xs) || 1, bh = Math.max(...ys) - Math.min(...ys) || 1
+      const padX = 70, padTop = onOverlay ? 70 : 48, padBottom = 64 // room for the map controls
+      const sc = Math.min((size.w - inset - 2 * padX) / bw, (size.h - padTop - padBottom) / bh, 2.4)
+      fitRef.current = { s: Math.max(0.2, sc), cx: (Math.max(...xs) + Math.min(...xs)) / 2, cy: (Math.max(...ys) + Math.min(...ys)) / 2 - (padTop - padBottom) / 2 / Math.max(0.2, sc) }
     }
   }
-  const toSvg = (e: React.PointerEvent) => {
-    const svg = svgRef.current!
-    const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY
-    const p = pt.matrixTransform(svg.getScreenCTM()!.inverse())
-    return { x: p.x, y: p.y }
-  }
+  const { s: fs, cx, cy } = fitRef.current
+  const k = fs * view.k
+  const ox = size.w / 2 - inset / 2
+  const scr = (p: { x: number; y: number }) => ({ x: ox + view.x + (p.x - cx) * k, y: size.h / 2 + view.y + (p.y - cy) * k })
+  const px = (e: React.PointerEvent) => { const r = svgRef.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top } }
+  const toSvg = (e: React.PointerEvent) => { const p = px(e); return { x: cx + (p.x - ox - view.x) / k, y: cy + (p.y - size.h / 2 - view.y) / k } }
+  const zoom = (f: number, at?: { x: number; y: number }) => setView((v) => {
+    const nk = Math.max(0.4, Math.min(5, v.k * f)), r = nk / v.k
+    const ax = (at?.x ?? ox) - ox, ay = (at?.y ?? size.h / 2) - size.h / 2
+    return { k: nk, x: ax - (ax - v.x) * r, y: ay - (ay - v.y) * r }
+  })
   const moved = useRef(false)
 
   // ---- colors
@@ -119,10 +148,10 @@ export default function Diagram({ data, selected, onSelect, issues, result, over
   const fillOf = (n: N): string => {
     if (n.star) return '#fff'
     const b = data.buses.find((x) => x.id === n.bus)!
-    if (b.type === 4) return '#e2e8f0'
-    if (!result || overlay === 'area' || overlay === 'loading') return AREA_COLORS[(b.area - 1) % AREA_COLORS.length] ?? '#2d3748'
+    if (b.type === 4) return '#d7d7d7'
+    if (!result || overlay === 'area' || overlay === 'loading') return AREA_COLORS[(b.area - 1) % AREA_COLORS.length] ?? AREA_COLORS[0]
     const r = busRes.get(b.id)
-    if (!r) return '#e2e8f0'
+    if (!r) return '#d7d7d7'
     if (overlay === 'vm') return vmColor(r.vm, b.vn, b.vx)
     if (overlay === 'price') return mix(AMBER, DARK, (r.price - pmin) / (pmax - pmin || 1))
     if (overlay === 'qheadroom') {
@@ -133,14 +162,14 @@ export default function Diagram({ data, selected, onSelect, issues, result, over
       const head = Math.min(hi - q, q - lo) / ((hi - lo) / 2 || 1)
       return mix(RED, GREEN, head)
     }
-    return '#2d3748'
+    return AREA_COLORS[0]
   }
   const edgeStyle = (e: E): { stroke?: string; width?: number } => {
     if (overlay !== 'loading' || !result) return {}
     const r = brRes.get(e.leg ?? e.id)
-    if (!r || !r.rating) return { stroke: '#cbd5e0' }
+    if (!r || !r.rating) return { stroke: '#d7d7d7' }
     const t = r.loadingPct / 100
-    return { stroke: t > 1 ? 'rgb(197,48,48)' : t > 0.8 ? 'rgb(221,107,32)' : t > 0.5 ? 'rgb(246,184,41)' : '#a0aec0', width: 1.5 + Math.min(4, t * 3.5) }
+    return { stroke: t > 1 ? 'rgb(232,39,60)' : t > 0.8 ? 'rgb(222,91,21)' : t > 0.5 ? 'rgb(205,218,60)' : '#b9c3c3', width: 1.5 + Math.min(4, t * 3.5) }
   }
   const glyph = (n: N) => {
     if (n.star) return ''
@@ -167,15 +196,25 @@ export default function Diagram({ data, selected, onSelect, issues, result, over
 
   return (
     <div className="diagram" ref={wrap}>
-      <svg ref={svgRef} viewBox={vbRef.current} preserveAspectRatio="xMidYMid meet"
-        onPointerMove={(e) => { if (!drag) return; moved.current = true; const p = toSvg(e); setPos((ps) => ({ ...ps, [drag]: p })) }}
+      <svg ref={svgRef} viewBox={`0 0 ${size.w} ${size.h}`} className={pan.current ? 'panning' : ''}
+        onPointerDown={(e) => {
+          if (e.target !== svgRef.current) return
+          ;(e.target as Element).setPointerCapture?.(e.pointerId)
+          const p = px(e); pan.current = { x: p.x, y: p.y, vx: view.x, vy: view.y }
+        }}
+        onPointerMove={(e) => {
+          if (pan.current) { const p = px(e), o = pan.current; setView((v) => ({ ...v, x: o.vx + p.x - o.x, y: o.vy + p.y - o.y })); return }
+          if (!drag) return; moved.current = true; const p = toSvg(e); setPos((ps) => ({ ...ps, [drag]: p }))
+        }}
         onPointerUp={() => {
+          pan.current = null
           if (drag && moved.current) onLayout({ ...layout, [drag]: pos[drag] })
           setDrag(null)
-        }}>
+        }}
+        onWheel={(e) => { if (!e.ctrlKey && !e.metaKey) return; e.preventDefault(); zoom(e.deltaY < 0 ? 1.15 : 1 / 1.15, { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY }) }}>
         {edges.map((e, i) => {
-          const a = pos[e.a], b = pos[e.b]
-          if (!a || !b) return null
+          if (!pos[e.a] || !pos[e.b]) return null
+          const a = scr(pos[e.a]), b = scr(pos[e.b])
           const st = edgeStyle(e)
           const issue = issues.find((x) => x.element === e.id)
           return (
@@ -188,8 +227,8 @@ export default function Diagram({ data, selected, onSelect, issues, result, over
           )
         })}
         {nodes0.map((n) => {
-          const p = pos[n.id]
-          if (!p) return null
+          if (!pos[n.id]) return null
+          const p = scr(pos[n.id])
           const sel = selBus === n.id || selEquipBus === n.id || selected === n.id.replace('star:', '')
           const iss = issueAt(n)
           const r = busRes.get(n.bus ?? -1)
@@ -198,13 +237,13 @@ export default function Diagram({ data, selected, onSelect, issues, result, over
               onPointerDown={(e) => { (e.target as Element).setPointerCapture?.(e.pointerId); moved.current = false; setDrag(n.id) }}
               onClick={() => { if (!moved.current) onSelect(n.star ? n.id.replace('star:', '') : n.id) }}>
               {n.star
-                ? <rect x={-6} y={-6} width={12} height={12} transform="rotate(45)" fill="#fff" stroke="var(--series-1)" strokeWidth={2} />
-                : <circle className="body" r={13} fill={fillOf(n)} />}
-              {sel && <circle className="ring" r={n.star ? 11 : 18} />}
-              <text className="glyph" textAnchor="middle" dy="0.35em">{glyph(n)}</text>
-              <text className="name" textAnchor="middle" y={n.star ? 20 : 27}>{n.star ? 'star' : n.label}{r && overlay === 'vm' ? ` · ${r.vm.toFixed(3)}` : ''}{r && overlay === 'price' ? ` · $${r.price.toFixed(1)}` : ''}</text>
-              {iss && <circle className={`issue-dot ${iss === 'warning' ? 'warn' : ''}`} cx={10} cy={-10} r={4.5} />}
-              {layout[n.id] && <circle className="pin" cx={-11} cy={-11} r={2.6}><title>pinned</title></circle>}
+                ? <rect x={-6} y={-6} width={12} height={12} transform="rotate(45)" fill="#fff" stroke="var(--lime-deep)" strokeWidth={2} />
+                : <circle className="body" r={15} fill={fillOf(n)} />}
+              {sel && <circle className="ring" r={n.star ? 12 : 21} />}
+              <text className="glyph" textAnchor="middle" dy="0.35em" fill={inkOn(fillOf(n))}>{glyph(n)}</text>
+              <text className="name" textAnchor="middle" y={n.star ? 21 : 31}>{n.star ? 'star' : n.label}{r && overlay === 'vm' ? ` · ${r.vm.toFixed(3)}` : ''}{r && overlay === 'price' ? ` · $${r.price.toFixed(1)}` : ''}</text>
+              {iss && <circle className={`issue-dot ${iss === 'warning' ? 'warn' : ''}`} cx={12} cy={-12} r={5} />}
+              {layout[n.id] && <circle className="pin" cx={-13} cy={-13} r={3}><title>pinned</title></circle>}
               <title>{n.star ? 'Three-winding transformer star point' : `${n.label}${r ? ` · VM ${r.vm.toFixed(4)} pu · ${r.price.toFixed(2)} $/MWh` : ''}`}</title>
             </g>
           )
@@ -216,20 +255,27 @@ export default function Diagram({ data, selected, onSelect, issues, result, over
             {OVERLAYS.map(([k, l]) => <option key={k} value={k} disabled={k !== 'area' && !result}>{l}</option>)}
           </select>
         )}
+      </div>
+      <div className="map-tools">
         <button className="btn small" disabled={!Object.keys(layout).length} onClick={() => onLayout({})} title="Release pinned buses and lay out again">Unpin all</button>
-        <button className="btn small" onClick={() => downloadPng(wrap.current, 'network.png')}>PNG</button>
+        <button className="btn small" onClick={() => downloadPng(wrap.current, 'network.png')} title="Download the diagram as a PNG">PNG</button>
+        <span className="zoom">
+          <button onClick={() => zoom(1.25)} title="Zoom in (or ctrl + wheel)" aria-label="Zoom in">+</button>
+          <button onClick={() => zoom(0.8)} title="Zoom out" aria-label="Zoom out">−</button>
+          <button onClick={() => setView({ k: 1, x: 0, y: 0 })} title="Fit the whole network" aria-label="Fit">⤢</button>
+        </span>
       </div>
       <div className="legend">
         {(!result || overlay === 'area' || overlay === 'loading') && data.areas.map((a, i) => (
           <div key={a.id}><i style={{ background: AREA_COLORS[i % AREA_COLORS.length] }} />Area {a.id}{a.name ? ` · ${a.name}` : ''}</div>
         ))}
-        {result && overlay === 'vm' && <div><span className="bar" style={{ background: 'linear-gradient(90deg, rgb(79,134,214), rgb(47,158,95), rgb(214,64,107))' }} />&nbsp;V min → V max</div>}
-        {result && overlay === 'price' && <div><span className="bar" style={{ background: 'linear-gradient(90deg, rgb(246,184,41), rgb(123,52,30))' }} />&nbsp;{pmin.toFixed(1)} → {pmax.toFixed(1)} $/MWh</div>}
-        {result && overlay === 'qheadroom' && <div><span className="bar" style={{ background: 'linear-gradient(90deg, rgb(214,64,107), rgb(47,158,95))' }} />&nbsp;at a Q limit → mid-range</div>}
-        {result && overlay === 'loading' && <div><span className="line" style={{ background: 'rgb(221,107,32)' }} />&gt; 80% of rating <span className="line" style={{ background: 'rgb(197,48,48)', marginLeft: 6 }} />&gt; 100%</div>}
+        {result && overlay === 'vm' && <div><span className="bar" style={{ background: 'linear-gradient(90deg, rgb(47,122,163), rgb(31,122,90), rgb(205,218,60), rgb(222,91,21))' }} />&nbsp;V min → V max</div>}
+        {result && overlay === 'price' && <div><span className="bar" style={{ background: 'linear-gradient(90deg, rgb(205,218,60), rgb(222,91,21))' }} />&nbsp;{pmin.toFixed(1)} → {pmax.toFixed(1)} $/MWh</div>}
+        {result && overlay === 'qheadroom' && <div><span className="bar" style={{ background: 'linear-gradient(90deg, rgb(222,91,21), rgb(31,122,90))' }} />&nbsp;at a Q limit → mid-range</div>}
+        {result && overlay === 'loading' && <div><span className="line" style={{ background: 'rgb(205,218,60)' }} />&gt; 50% <span className="line" style={{ background: 'rgb(222,91,21)', marginLeft: 6 }} />&gt; 80% of rating <span className="line" style={{ background: 'rgb(232,39,60)', marginLeft: 6 }} />&gt; 100%</div>}
         <div>★ reference &nbsp; ~ generator &nbsp; ⇅ fixed P/Q &nbsp; ↓ load</div>
-        <div><span className="line" style={{ background: '#a0aec0' }} />line <span className="line" style={{ background: 'var(--series-1)', marginLeft: 6 }} />transformer <span className="line" style={{ background: '#4f86d6', marginLeft: 6 }} />tie</div>
-        <div><i style={{ background: 'var(--bad)', width: 8, height: 8 }} />error <i style={{ background: 'var(--orange)', width: 8, height: 8, marginLeft: 6 }} />warning · drag a bus to pin it</div>
+        <div><span className="line" style={{ background: '#a3afaf' }} />line <span className="line" style={{ background: 'var(--lime-deep)', marginLeft: 6 }} />transformer <span className="line" style={{ background: 'var(--ocean)', marginLeft: 6 }} />tie</div>
+        <div><i style={{ background: 'var(--bad)', width: 8, height: 8 }} />error <i style={{ background: '#fff', boxShadow: 'inset 0 0 0 2px var(--warn)', width: 9, height: 9, marginLeft: 6 }} />warning · drag a bus to pin it, the background to pan</div>
       </div>
     </div>
   )

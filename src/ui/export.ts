@@ -46,7 +46,10 @@ export async function downloadPng(el: HTMLElement | null, name: string) {
   const canvas = document.createElement('canvas')
   canvas.width = rect.width * scale; canvas.height = rect.height * scale
   const ctx = canvas.getContext('2d')!
-  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height)
+  // the svg's own background (the diagram's night sky), white when it has none
+  const bg = getComputedStyle(svg).backgroundColor
+  ctx.fillStyle = !bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)' ? '#fff' : bg
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
   ctx.scale(scale, scale)
   ctx.drawImage(img, 0, 0, rect.width, rect.height)
   URL.revokeObjectURL(url)

@@ -1,6 +1,6 @@
 // One run, one section at a time: Overview, Buses, Generators, Branches, Diagram, Charts, Log, Solver input.
 import { useRef, useState } from 'react'
-import { Header, Shell } from '../App'
+import { Shell } from '../App'
 import { isFixedPQ, key, labelOf } from '../model/types'
 import { n } from '../model/validate'
 import { translate } from '../solver/codes'
@@ -35,7 +35,7 @@ export default function RunPage({ num, section }: { num: number; section: string
   const [overlay, setOverlay] = useState<Overlay>('vm')
   const [sel, setSel] = useState<string | null>(null)
   const chartV = useRef<HTMLDivElement>(null), chartQ = useRef<HTMLDivElement>(null)
-  if (!r) return <Shell panel={<Header active="runs" />}><div className="frame-scroll"><p className="muted">Run {num} does not exist (the demo data may have been reset). <a href={href('/runs')}>All runs</a></p></div></Shell>
+  if (!r) return <Shell ><div className="frame-scroll"><p className="muted">Run {num} does not exist (the demo data may have been reset). <a href={href('/runs')}>All runs</a></p></div></Shell>
   const data = runData(r)
   const out = r.output
   const sum = out?.summary
@@ -50,7 +50,6 @@ export default function RunPage({ num, section }: { num: number; section: string
 
   const panel = (
     <>
-      <Header active="runs" />
       <a className="back" href={href('/runs')}>← all runs</a>
       <h2 className="view">Run {r.num} <StatusTag s={r.status} /></h2>
       <p className="muted" style={{ margin: '2px 0 0', fontSize: 14 }}>{objectiveLabel(r.objective)}</p>

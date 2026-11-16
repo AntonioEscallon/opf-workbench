@@ -1,7 +1,7 @@
 // Scenarios and sweeps. A scenario is a named set of overrides on one case version; a sweep generates one scenario
 // per step of a parameter (here: a unit's power factor, producing and absorbing) and queues a run for each.
 import { useState } from 'react'
-import { Header, Shell, useToast } from '../App'
+import { Shell, useToast } from '../App'
 import { key, labelOf } from '../model/types'
 import { qAtPf, sweepSteps } from '../model/ops'
 import { OBJECTIVES, objectiveLabel } from '../solver/interface'
@@ -63,7 +63,6 @@ export default function ScenariosPage() {
 
   const panel = (
     <>
-      <Header active="scenarios" />
       <div className="label" style={{ marginTop: 4 }}>New parameter sweep</div>
       <p className="hint" style={{ marginTop: 0 }}>Converts the unit to fixed P/Q at each power factor (one scenario per step, both directions), then queues one run per scenario.</p>
       <div className="fields" style={{ gridTemplateColumns: '1fr' }}>

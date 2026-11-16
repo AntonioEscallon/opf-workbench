@@ -1,9 +1,13 @@
-// The case: the network diagram over the equipment tables, the selected element in the left panel, validation on
-// every edit. Edits on the latest version create a new version; edits on a scenario add overrides to it.
+// The case: the network diagram is the centre of the page. Above it, the case and version being edited, the study's
+// progress (data → run → results) and one tile per way of coloring the diagram; each tile opens an indicator card with
+// what it shows, how the buses or branches are spread, and its headline figure. The selected element opens in a card
+// over the diagram; the equipment tables, issues and history sit in a drawer underneath that folds away.
+// Edits on the latest version create a new version; edits on a scenario add overrides to it.
 import { useMemo, useState } from 'react'
-import { Header, Shell, useToast } from '../App'
-import { keyOf, labelOf } from '../model/types'
-import type { Table } from '../model/types'
+import type { ReactNode } from 'react'
+import { Shell, useToast } from '../App'
+import { isFixedPQ, keyOf, labelOf } from '../model/types'
+import type { CaseData, Table } from '../model/types'
 import { editField } from '../model/ops'
 import type { Change } from '../model/ops'
 import { RULES } from '../model/validate'
@@ -18,6 +22,7 @@ import type { TCol } from '../ui/DataTable'
 import Detail, { IssueList } from '../ui/Detail'
 import Diagram from '../ui/Diagram'
 import type { Overlay } from '../ui/Diagram'
+import type { SolverOutput } from '../solver/interface'
 import { href } from '../router'
 
 const TABS: (Table | 'issues' | 'history')[] = ['buses', 'loads', 'generators', 'branches', 'transformers', 'shunts', 'issues', 'history']
@@ -25,6 +30,7 @@ const ago = (iso: string) => {
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
   return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : new Date(iso).toLocaleDateString()
 }
+const DRAWER_KEY = 'opf-workbench/drawer'
 export const targetLabel = (t: Target) => (t.kind === 'version' ? `v${t.num}` : `Scenario ${t.num}`)
 
 export function TargetPicker({ value, onChange, includeSweeps }: { value: string; onChange: (v: string) => void; includeSweeps?: boolean }) {
@@ -51,6 +57,9 @@ export default function CasePage() {
   const ui = useUI()
   const toast = useToast()
   const [tab, setTab] = useState<(typeof TABS)[number]>('generators')
+  const [drawer, setDrawerState] = useState(() => { try { return localStorage.getItem(DRAWER_KEY) === 'open' } catch { return false } })
+  const setDrawer = (open: boolean) => { setDrawerState(open); try { localStorage.setItem(DRAWER_KEY, open ? 'open' : 'closed') } catch { /* private mode */ } }
+  const openTab = (t: (typeof TABS)[number]) => { if (drawer && tab === t) setDrawer(false); else { setTab(t); setDrawer(true) } }
   const [overlay, setOverlay] = useState<Overlay>('area')
   const [sev, setSev] = useState<'all' | 'error' | 'warning'>('all')
 
@@ -122,88 +131,103 @@ export default function CasePage() {
 
   const loadMw = data.loads.filter((l) => l.status).reduce((a, l) => a + l.pl, 0)
   const capMw = data.generators.filter((g) => g.status && g.pmax > 0).reduce((a, g) => a + g.pmax, 0)
-  const strip = (
-    <div className="strip">
-      <span>Working on<b>{targetLabel(target)}{isHead ? ' (latest)' : ''}</b></span>
-      <span>Buses<b>{data.buses.length}</b></span>
-      <span>Load<b>{loadMw.toFixed(1)} MW</b></span>
-      <span>Capacity<b>{capMw.toFixed(1)} MW</b></span>
-      <span>Blocking errors<b className={errors.length ? 'bad' : 'good'}>{errors.length}</b></span>
-      <span>Warnings<b className={warnings.length ? 'warn' : ''}>{warnings.length}</b></span>
-      {lastRun && <span>Last run<b><a href={href(`/run/${lastRun.num}/overview`)}>Run {lastRun.num}</a></b></span>}
-    </div>
-  )
-
-  const panel = (
-    <>
-      <Header active="case" />
-      <div className="label" style={{ marginTop: 4 }}>Case data · {s.caseName}</div>
-      <TargetPicker value={target.kind === 'version' ? `v${target.num}` : `s${target.num}`} onChange={(v) => setUI({ target: parseTarget(v), selected: ui.selected })} />
-      <div className="row" style={{ marginTop: 8 }}>
-        <div className="seg" style={{ flex: 1 }}>
-          <button className={ui.units === 'physical' ? 'on' : ''} onClick={() => setUI({ units: 'physical' })}>MW · Mvar</button>
-          <button className={ui.units === 'pu' ? 'on' : ''} onClick={() => setUI({ units: 'pu' })}>per-unit ({data.sbase} MVA)</button>
-        </div>
-      </div>
-      {readOnly && (
-        <div className="callout warn" style={{ marginTop: 12 }}>
-          <b className="t">v{target.num} is an earlier version (read-only)</b>
-          Runs on it stay reproducible. To keep editing from here, restore it as a new version.
-          <div className="row" style={{ marginTop: 8 }}>
-            <button className="btn small primary" onClick={() => { const v = restoreVersion(target.num); setUI({ target: { kind: 'version', num: v } }); toast(`v${v}: restored v${target.num}`) }}>Restore as v{head(s).num + 1}</button>
-            <button className="btn small" onClick={() => setUI({ target: { kind: 'version', num: head(s).num } })}>Go to latest</button>
-          </div>
-        </div>
-      )}
-      {sc && (
-        <div className="callout" style={{ marginTop: 12 }}>
-          <b className="t">Scenario {sc.num}: {sc.name}</b>
-          {sc.patches.length} override{sc.patches.length === 1 ? '' : 's'} on v{sc.base}{sc.sweep ? ` · step of sweep ${sc.sweep}` : ''}. Edits here add overrides; the base version does not change.
-          <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13 }}>{sc.notes.map((x, i) => <li key={i}>{x}</li>)}</ul>
-          <div className="row" style={{ marginTop: 8 }}>
-            <a className="btn small primary" href={href('/runs')} onClick={() => setUI({})}>Run it</a>
-            <button className="btn small" onClick={() => { const v = promoteScenario(sc.num); setUI({ target: { kind: 'version', num: v } }); toast(`v${v}: scenario ${sc.num} applied to the latest version`) }}>Apply to latest version</button>
-          </div>
-        </div>
-      )}
-      {ui.selected ? (
-        <>
-          <div className="label"><span>Selected</span><button className="btn small link" onClick={() => setUI({ selected: null })}>clear</button></div>
-          <Detail data={data} element={ui.selected} units={ui.units} readOnly={readOnly} issues={issues}
-            result={lastRun?.output ? { output: lastRun.output, run: lastRun.num } : null}
-            onCommit={doCommit} onScenario={asScenario} onSelect={select} onFix={fix} />
-        </>
-      ) : (
-        <>
-          <p className="hint" style={{ marginTop: 14 }}>Click a bus or branch on the diagram, or a row in a table, to see and edit it here. Yellow cells are editable; changes are validated as you make them.</p>
-          <div className="label"><span>Validation</span><button className="btn small link" onClick={() => setTab('issues')}>all {issues.length}</button></div>
-          <IssueList issues={[...errors, ...warnings]} limit={6} onPick={(k) => k !== 'case' && select(k)} onFix={readOnly ? undefined : fix} />
-        </>
-      )}
-    </>
-  )
+  const inds = indicators(data, result, loadMw, capMw)
+  const shown: Overlay = result ? overlay : 'area'
+  const ind = inds[shown]
 
   // ---- issues tab grouped by rule, with "fix all like this"
   const shownIssues = issues.filter((i) => sev === 'all' || i.severity === sev)
   const rules = [...new Set(shownIssues.map((i) => i.rule))]
 
   return (
-    <Shell panel={panel} strip={strip}>
-      <div className="split">
-        <div className="pane">
-          <Diagram data={data} selected={ui.selected} onSelect={select} issues={issues} result={result}
-            overlay={result ? overlay : 'area'} onOverlay={setOverlay} layout={s.layout} onLayout={saveLayout} />
-          {result && overlay !== 'area' && <div className="muted small" style={{ position: 'absolute', left: 12, top: 10 }}>colored by Run {lastRun!.num}</div>}
+    <Shell>
+      <header className="casehead">
+        <div>
+          <h2>{s.caseName}</h2>
+          <div className="pick" style={{ marginTop: 6 }}>
+            <TargetPicker value={target.kind === 'version' ? `v${target.num}` : `s${target.num}`} onChange={(v) => setUI({ target: parseTarget(v), selected: ui.selected })} />
+            <div className="seg">
+              <button className={ui.units === 'physical' ? 'on' : ''} onClick={() => setUI({ units: 'physical' })}>MW · Mvar</button>
+              <button className={ui.units === 'pu' ? 'on' : ''} onClick={() => setUI({ units: 'pu' })}>per-unit ({data.sbase} MVA)</button>
+            </div>
+          </div>
         </div>
+        <nav className="stepper" aria-label="Study progress">
+          <a href="#" onClick={(e) => { e.preventDefault(); setTab('issues'); setDrawer(true) }} title="Validation runs on every edit; open the issues">
+            Case data<span className={`sub ${errors.length ? 'bad' : warnings.length ? 'warn' : ''}`}>
+              {errors.length ? `${errors.length} blocking error${errors.length > 1 ? 's' : ''}` : warnings.length ? `ready · ${warnings.length} warning${warnings.length > 1 ? 's' : ''}` : 'ready'}</span>
+            <span className="num">1</span></a>
+          <a href={href('/runs')} className={lastRun ? '' : 'todo'}>
+            Run<span className="sub">{lastRun ? `Run ${lastRun.num} · ${lastRun.status.replace('_', ' ')}` : errors.length ? 'fix blocking errors first' : 'not run yet'}</span>
+            <span className="num">2</span></a>
+          {lastRun
+            ? <a href={href(`/run/${lastRun.num}/overview`)}>Results &amp; export<span className="sub">open Run {lastRun.num}</span><span className="num">3</span></a>
+            : <span className="step todo">Results &amp; export<span className="sub">after a run</span><span className="num">3</span></span>}
+        </nav>
+        <a className="btn go" href={href('/runs')} title="Start a run on this version or scenario">Run ▸</a>
+      </header>
+
+      {readOnly && (
+        <div className="banner warn">
+          <span className="grow"><b>v{target.num} is an earlier version (read-only).</b> Runs on it stay reproducible. To keep editing from here, restore it as a new version.</span>
+          <button className="btn small primary" onClick={() => { const v = restoreVersion(target.num); setUI({ target: { kind: 'version', num: v } }); toast(`v${v}: restored v${target.num}`) }}>Restore as v{head(s).num + 1}</button>
+          <button className="btn small" onClick={() => setUI({ target: { kind: 'version', num: head(s).num } })}>Go to latest</button>
+        </div>
+      )}
+      {sc && (
+        <div className="banner">
+          <span className="grow" title={sc.notes.join('\n')}><b>Scenario {sc.num}: {sc.name}</b> · {sc.patches.length} override{sc.patches.length === 1 ? '' : 's'} on v{sc.base}{sc.sweep ? ` · step of sweep ${sc.sweep}` : ''}. Edits here add overrides; the base version does not change.</span>
+          <a className="btn small go" href={href('/runs')}>Run it</a>
+          <button className="btn small" onClick={() => { const v = promoteScenario(sc.num); setUI({ target: { kind: 'version', num: v } }); toast(`v${v}: scenario ${sc.num} applied to the latest version`) }}>Apply to latest version</button>
+        </div>
+      )}
+
+      <nav className="tiles" aria-label="Color the diagram by">
+        {(Object.keys(inds) as Overlay[]).map((o, i) => {
+          const x = inds[o]
+          const off = o !== 'area' && !result
+          return (
+            <button key={o} className={`tile ${shown === o ? 'on' : ''} ${x.bad ? 'bad' : ''}`} disabled={off} onClick={() => setOverlay(o)}
+              title={off ? 'Run this case to color the diagram by results' : x.about}>
+              <b>{i + 1}</b><span className="lbl">{x.label}</span><span className="val">{off ? '—' : x.tile}</span>
+            </button>
+          )
+        })}
+      </nav>
+
+      <section className="ind">
+        <div className="ind-title">{ind.label}{shown !== 'area' && lastRun && <small>from Run {lastRun.num}</small>}{!result && <small>run this case to color the diagram by results</small>}</div>
+        <div className="ind-info">
+          <div><h4>About this view</h4><p>{ind.about}</p>{ind.facts && <div className="facts-line">{ind.facts}</div>}</div>
+          <div>{ind.dist && <><h4>{ind.dist.title}</h4><Dist d={ind.dist} /></>}</div>
+          <div className="score"><h4>{ind.score.title}</h4><span className={`badge-big ${ind.score.cls ?? ''}`}>{ind.score.text}</span><span className="cap">{ind.score.cap}</span></div>
+        </div>
+        <div className={`ind-map ${ui.selected ? 'has-card' : ''}`}>
+          <Diagram data={data} selected={ui.selected} onSelect={select} issues={issues} result={result}
+            overlay={shown} layout={s.layout} onLayout={saveLayout} inset={ui.selected ? 410 : 0} />
+          {!ui.selected && <div className="map-hint">Click a bus or branch to inspect and edit it</div>}
+          {ui.selected && (
+            <aside className="float-card">
+              <div className="label"><span>Selected</span><button className="x" onClick={() => setUI({ selected: null })} aria-label="Close" title="Close">×</button></div>
+              <Detail data={data} element={ui.selected} units={ui.units} readOnly={readOnly} issues={issues}
+                result={lastRun?.output ? { output: lastRun.output, run: lastRun.num } : null}
+                onCommit={doCommit} onScenario={asScenario} onSelect={select} onFix={fix} />
+            </aside>
+          )}
+        </div>
+      </section>
+
+      <section className={`drawer ${drawer ? 'open' : ''}`}>
         <div className="subtabs">
           {TABS.map((t) => {
             const count = t === 'issues' ? issues.length : t === 'history' ? s.versions.length : (data[t as Table] as unknown[]).length
             const cls = t === 'issues' ? (errors.length ? 'bad' : warnings.length ? 'warn' : '') : ''
-            return <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
+            return <button key={t} className={tab === t ? 'on' : ''} onClick={() => openTab(t)}>
               {t === 'issues' ? 'Issues' : t === 'history' ? 'History' : TABLE_LABEL[t as Table]}<span className={`count ${cls}`}>{count}</span></button>
           })}
+          <button className="toggle" onClick={() => setDrawer(!drawer)} aria-expanded={drawer}>{drawer ? 'Hide tables ▾' : 'Show tables ▴'}</button>
         </div>
-        <div className="pane table-pane">
+        {drawer && <div className="table-pane">
           {tab !== 'issues' && tab !== 'history' && (
             <DataTable key={tab} cols={tableCols[tab]} rows={data[tab] as any[]} rowKey={(r) => keyOf(tab, r)}
               selected={ui.selected} onSelect={select} onEdit={readOnly ? undefined : onEdit(tab)} onBulk={!readOnly}
@@ -253,8 +277,107 @@ export default function CasePage() {
               </ul>
             </div>
           )}
-        </div>
-      </div>
+        </div>}
+      </section>
     </Shell>
+  )
+}
+
+// ------------------------------------------------------------------------------------------------ indicators
+// One per diagram coloring: the tile's short figure, what the view shows, how the elements are spread along a 0–1
+// line (the worst one highlighted), and a headline figure.
+type Dot = { x: number; label: string }
+type DistSpec = { title: string; dots: Dot[]; worst: number; band?: [number, number]; ticks?: number[]; left: string; right: string }
+type Indicator = {
+  label: string; tile: string; bad?: boolean; about: string; facts?: ReactNode
+  dist?: DistSpec; score: { title: string; text: string; cap: string; cls?: 'hot' | 'ok' }
+}
+const clamp = (x: number) => Math.max(0, Math.min(1, x))
+
+function indicators(data: CaseData, r: SolverOutput | null, loadMw: number, capMw: number): Record<Overlay, Indicator> {
+  const busName = (id: number) => data.buses.find((b) => b.id === id)?.name ?? `Bus ${id}`
+  const out = {} as Record<Overlay, Indicator>
+  out.area = {
+    label: 'Network', tile: `${data.areas.length} area${data.areas.length === 1 ? '' : 's'}`,
+    about: 'The network as entered: buses colored by area, with the reference bus (★), generators (~), fixed P/Q units (⇅) and loads (↓). Run the case to color it by a result.',
+    facts: <>Buses <b>{data.buses.length}</b> · branches <b>{data.branches.length + data.transformers.length}</b> · load <b>{loadMw.toFixed(1)} MW</b> · capacity <b>{capMw.toFixed(1)} MW</b></>,
+    score: { title: 'Capacity margin', text: `${capMw ? Math.round((1 - loadMw / capMw) * 100) : 0}%`, cap: 'in-service P max above load' },
+  }
+  const none = (label: string, about: string): Indicator => ({ label, tile: '—', about, score: { title: 'Headline', text: '—', cap: 'run the case first' } })
+  if (!r || !r.summary) {
+    out.vm = none('Voltage vs limits', ABOUT.vm); out.qheadroom = none('Q headroom', ABOUT.qheadroom)
+    out.price = none('Price', ABOUT.price); out.loading = none('Branch loading', ABOUT.loading)
+    return out
+  }
+  // voltage: position in each bus's own band, shown on -25% … 125% of the band
+  const vm = r.buses.flatMap((b) => {
+    const bus = data.buses.find((x) => x.id === b.id)
+    if (!bus || bus.type === 4) return []
+    const t = (b.vm - bus.vn) / (bus.vx - bus.vn || 1)
+    return [{ t, x: clamp((t + 0.25) / 1.5), label: `${bus.name} ${b.vm.toFixed(3)}` }]
+  })
+  const outside = vm.filter((v) => v.t < -1e-4 || v.t > 1 + 1e-4).length
+  const vWorst = vm.reduce((w, v, i) => (Math.abs(v.t - 0.5) > Math.abs(vm[w].t - 0.5) ? i : w), 0)
+  out.vm = {
+    label: 'Voltage vs limits', tile: `${r.summary.minVm.toFixed(3)}–${r.summary.maxVm.toFixed(3)}`, bad: outside > 0, about: ABOUT.vm,
+    facts: <>Lowest <b>{r.summary.minVm.toFixed(4)} pu</b> at {busName(r.summary.minVmBus)} · highest <b>{r.summary.maxVm.toFixed(4)} pu</b> at {busName(r.summary.maxVmBus)}</>,
+    dist: { title: `Distribution of ${vm.length} buses in their bands`, dots: vm, worst: vWorst, band: [0.25 / 1.5, 1.25 / 1.5], left: 'below', right: 'above' },
+    score: { title: 'Outside band', text: String(outside), cap: `bus${outside === 1 ? '' : 'es'} outside V min–V max`, cls: outside ? 'hot' : 'ok' },
+  }
+  // reactive headroom of each regulating unit: 0 = at a Q limit, 1 = mid-range
+  const q = data.generators.filter((g) => g.status && !isFixedPQ(g)).flatMap((g) => {
+    const res = r.generators.find((x) => x.bus === g.bus && x.id === g.id)
+    if (!res) return []
+    const head = clamp(Math.min(g.qmax - res.qg, res.qg - g.qmin) / ((g.qmax - g.qmin) / 2 || 1))
+    return [{ x: head, label: `${labelOf(`generator:${g.bus}-${g.id}`, data)} ${res.qg.toFixed(1)} Mvar` }]
+  })
+  const atLimit = q.filter((v) => v.x < 0.02).length
+  out.qheadroom = {
+    label: 'Q headroom', tile: `${atLimit} at limit`, bad: atLimit > 0, about: ABOUT.qheadroom,
+    facts: <>Total Q <b>{r.summary.genQ.toFixed(1)} Mvar</b> from {q.length} regulating unit{q.length === 1 ? '' : 's'}</>,
+    dist: q.length ? { title: `Distribution of ${q.length} regulating units`, dots: q, worst: q.reduce((w, v, i) => (v.x < q[w].x ? i : w), 0), ticks: [0], left: 'at limit', right: 'mid-range' } : undefined,
+    score: { title: 'At a Q limit', text: String(atLimit), cap: `unit${atLimit === 1 ? '' : 's'} with < 2% headroom`, cls: atLimit ? 'hot' : 'ok' },
+  }
+  // price
+  const ps = r.buses.map((b) => b.price), pmin = Math.min(...ps), pmax = Math.max(...ps)
+  const pr = r.buses.map((b) => ({ x: (b.price - pmin) / (pmax - pmin || 1), label: `${busName(b.id)} $${b.price.toFixed(2)}` }))
+  out.price = {
+    label: 'Price', tile: `λ ${r.summary.lambda.toFixed(1)}`, about: ABOUT.price,
+    facts: <>Generation cost <b>${r.summary.genCost.toFixed(0)}/h</b> · losses <b>{(r.summary.lineLossP + r.summary.txLossP).toFixed(2)} MW</b></>,
+    dist: { title: `Distribution of ${pr.length} bus prices`, dots: pr, worst: pr.reduce((w, v, i) => (v.x > pr[w].x ? i : w), 0), left: `$${pmin.toFixed(1)}`, right: `$${pmax.toFixed(1)}` },
+    score: { title: 'System λ', text: `$${r.summary.lambda.toFixed(1)}`, cap: 'per MWh' },
+  }
+  // branch loading on 0 … 130% of rating
+  const ld = r.branches.filter((b) => b.rating > 0).map((b) => ({ pct: b.loadingPct, x: clamp(b.loadingPct / 130), label: `${labelOf(b.element.split('#')[0], data)} ${b.loadingPct.toFixed(0)}%` }))
+  const lw = ld.reduce((w, v, i) => (v.pct > ld[w].pct ? i : w), 0)
+  const maxPct = ld.length ? ld[lw].pct : 0
+  out.loading = {
+    label: 'Branch loading', tile: `max ${maxPct.toFixed(0)}%`, bad: maxPct > 100, about: ABOUT.loading,
+    facts: <>{ld.filter((v) => v.pct > 80).length} of {ld.length} rated branches above 80% · {r.summary.violations} limit violation{r.summary.violations === 1 ? '' : 's'}</>,
+    dist: ld.length ? { title: `Distribution of ${ld.length} rated branches`, dots: ld, worst: lw, ticks: [100 / 130], left: '0%', right: '130%' } : undefined,
+    score: { title: 'Highest loading', text: `${maxPct.toFixed(0)}%`, cap: 'of rating', cls: maxPct > 100 ? 'hot' : maxPct < 80 ? 'ok' : undefined },
+  }
+  return out
+}
+
+const ABOUT = {
+  vm: 'Each bus voltage against its own limits: blue toward V min, green mid-band, chartreuse then orange toward V max. Labels show VM in pu.',
+  qheadroom: 'How close each regulating unit is to its reactive limit. Orange buses are at or near a Q limit and cannot hold voltage much further.',
+  price: 'Marginal price at each bus (the solver\'s OS P) in $/MWh, chartreuse to orange. Spreads come from losses and binding limits.',
+  loading: 'Branch flow as a share of its rating: chartreuse above 50%, orange above 80%, red above 100%; thicker lines carry more.',
+}
+
+/** The distribution strip: every element as a dot on a 0–1 line, the worst one highlighted and labelled. */
+function Dist({ d }: { d: DistSpec }) {
+  const w = d.dots[d.worst]
+  return (
+    <div className="dist">
+      <span className="axis" />
+      {d.band && <span className="band" style={{ left: `${d.band[0] * 100}%`, width: `${(d.band[1] - d.band[0]) * 100}%` }} title="within limits" />}
+      {d.ticks?.map((t) => <span key={t} className="tick" style={{ left: `${t * 100}%` }} />)}
+      {d.dots.map((p, i) => <span key={i} className={`dot ${i === d.worst ? 'worst' : ''}`} style={{ left: `${p.x * 100}%` }} title={p.label} />)}
+      <span className="end l">{d.left}</span><span className="end r">{d.right}</span>
+      {w && <span className="wl" style={{ left: `${Math.min(80, Math.max(20, w.x * 100))}%` }}>{w.label}</span>}
+    </div>
   )
 }

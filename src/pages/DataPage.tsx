@@ -1,7 +1,7 @@
 // Data exchange and reference: RAW / side-file import and export, a live round-trip check, the database schema,
 // the solver interface, and the open questions this sketch had to assume answers to.
 import { useState } from 'react'
-import { Header, Shell, useToast } from '../App'
+import { Shell, useToast } from '../App'
 import { applyCosts, applyVolts, readRaw, writeCosts, writeRaw, writeVolts } from '../model/raw'
 import { addVersion, head, resetDemo, setUI, useStore, version } from '../store'
 import { download } from '../ui/export'
@@ -64,7 +64,6 @@ export default function DataPage() {
 
   const panel = (
     <>
-      <Header active="data" />
       <ul className="sections">
         {SECTIONS.map(([id, name]) => <li key={id}><a className={section === id ? 'on' : ''} href="#/data" onClick={(e) => { e.preventDefault(); setSection(id) }}>{name}</a></li>)}
       </ul>
